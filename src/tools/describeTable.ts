@@ -31,9 +31,9 @@ interface ColumnInfo {
 
 export function registerDescribeTableTool(server: McpServer): void {
   server.registerTool(
-    'describe_table',
+    'opengauss_describe_table',
     {
-      title: '描述表结构',
+      title: '描述 openGauss 表结构',
       description: '返回表的列信息（列名、类型、是否可空等）',
       inputSchema: describeTableInputSchema,
     },
