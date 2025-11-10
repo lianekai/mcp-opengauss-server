@@ -58,7 +58,7 @@ npm run dev
     "opengauss": {
       "command": "node",
       "args": [
-        "/Users/lianyikai/software/mcp/mcp-opengauss-server/dist/index.js"
+        "/Users/your-name/software/mcp/mcp-opengauss-server/dist/index.js"
       ],
       "env": {
         "OPENGAUSS_HOST": "localhost",
@@ -156,6 +156,9 @@ A: 在工具调用中指定 `schema` 参数，或修改 `.env` 文件中的 `OPE
 2. 检查数据库连接配置
 3. 参考 openGauss 官方文档
 4. 提交 Issue 到项目仓库
+
+
+
 
 
 

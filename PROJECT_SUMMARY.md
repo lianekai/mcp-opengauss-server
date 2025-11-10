@@ -178,7 +178,7 @@ export async function withConnection<T>(
     "opengauss": {
       "command": "node",
       "args": [
-        "/Users/lianyikai/software/mcp/mcp-opengauss-server/dist/index.js"
+        "/Users/your-name/software/mcp/mcp-opengauss-server/dist/index.js"
       ],
       "env": {
         "OPENGAUSS_HOST": "localhost",
@@ -324,7 +324,7 @@ npm run dev
 
 ```bash
 # 1. 克隆或下载项目
-cd /Users/lianyikai/software/mcp/mcp-opengauss-server
+cd /Users/your-name/software/mcp/mcp-opengauss-server
 
 # 2. 安装依赖
 npm install
@@ -444,8 +444,9 @@ CMD ["node", "dist/index.js"]
 
 **项目状态**: ✅ 生产就绪  
 **最后更新**: 2025-11-08  
-**维护者**: 待定  
+**维护者**: lianekai 
 **许可证**: MIT
+
 
 
 
