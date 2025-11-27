@@ -17,7 +17,13 @@
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write src/**/*.ts"
   },
-  "keywords": ["mcp", "opengauss", "database", "mcp-server", "security"],
+  "keywords": [
+    "mcp",
+    "opengauss",
+    "database",
+    "mcp-server",
+    "security"
+  ],
   "author": "",
   "license": "MIT",
   "description": "MCP server for openGauss database operations with enhanced security",
@@ -25,14 +31,14 @@
     "node": ">=16"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.21.0",
-    "node-opengauss": "^1.1.0",
+    "@modelcontextprotocol/sdk": "^1.23.0",
     "dotenv": "^17.2.3",
+    "node-opengauss": "^1.1.0",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.2.2",
     "yargs": "^17.7.2",
     "yargs-parser": "^21.1.1",
-    "zod": "^3.25.76",
-    "pino": "^9.5.0",
-    "pino-pretty": "^11.2.2"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
@@ -48,4 +54,3 @@
     "vitest": "^3.2.4"
   }
 }
-
