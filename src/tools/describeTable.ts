@@ -36,6 +36,12 @@ export function registerDescribeTableTool(server: McpServer): void {
       title: '描述 openGauss 表结构',
       description: '返回表的列信息（列名、类型、是否可空等）',
       inputSchema: describeTableInputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ table, schema }: DescribeTableParams) => {
       const effectiveSchema = schema ?? getConfig().schema;

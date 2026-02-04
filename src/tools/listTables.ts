@@ -21,6 +21,12 @@ export function registerListTablesTool(server: McpServer): void {
       title: '列出 openGauss 数据库中的所有表',
       description: '返回指定 Schema 下的所有表名',
       inputSchema: listTablesInputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ schema }: ListTablesParams) => {
       const effectiveSchema = schema ?? getConfig().schema;

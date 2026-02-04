@@ -26,6 +26,12 @@ export function registerExecuteQueryTool(server: McpServer): void {
       title: '执行 openGauss 只读 SQL',
       description: '仅允许 SELECT/SHOW/DESCRIBE/EXPLAIN 语句',
       inputSchema: executeQueryInputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ query, schema }: ExecuteQueryParams) => {
       const effectiveSchema = schema ?? getConfig().schema;
@@ -40,14 +46,37 @@ export function registerExecuteQueryTool(server: McpServer): void {
         });
 
         const rows = result.rows ?? [];
-        const columns = result.fields?.map((field) => field.name) ?? [];
+        const columns =
+          result.fields?.map((field) => field.name) ??
+          (rows.length > 0 ? Object.keys(rows[0] as Record<string, unknown>) : []);
+
+        // 将单元格转为字符串；Buffer 不使用 Node 默认 "<Buffer ...>"，避免被误解析为 JSON 导致 "Unexpected token '<'"
+        const cellToString = (value: unknown): string => {
+          if (value == null) {
+            return '';
+          }
+          if (Buffer.isBuffer(value)) {
+            return '[BINARY]';
+          }
+          return String(value);
+        };
 
         // 格式化为制表符分隔的文本
         const header = columns.join('\t');
         const dataLines = rows.map((row: Record<string, unknown>) =>
-          columns.map((column) => String(row[column] ?? '')).join('\t')
+          columns.map((col) => cellToString(row[col])).join('\t')
         );
         const text = [header, ...dataLines].filter(Boolean).join('\n');
+
+        // structuredContent 中也不保留 Buffer，避免序列化/解析异常
+        const safeRows = rows.map((row: Record<string, unknown>) => {
+          const out: Record<string, unknown> = {};
+          for (const col of columns) {
+            const v = row[col];
+            out[col] = Buffer.isBuffer(v) ? '[BINARY]' : v;
+          }
+          return out;
+        });
 
         return {
           content: [
@@ -58,7 +87,7 @@ export function registerExecuteQueryTool(server: McpServer): void {
           ],
           structuredContent: {
             columns,
-            rows,
+            rows: safeRows,
             rowCount: result.rowCount ?? rows.length,
           },
         };

@@ -11,6 +11,7 @@ export interface OpenGaussConfig {
   user: string;
   password: string;
   schema: string;
+  enableWrite: boolean;
 }
 
 const DEFAULT_PORT = '5432';
@@ -27,6 +28,7 @@ const argv = yargs(hideBin(process.argv))
   .option('port', { type: 'string', describe: '数据库端口', default: DEFAULT_PORT })
   .option('database', { type: 'string', describe: '数据库名称', default: DEFAULT_DATABASE })
   .option('schema', { type: 'string', describe: '默认 Schema', default: DEFAULT_SCHEMA })
+  .option('enable-write', { type: 'boolean', describe: '启用写入能力（INSERT/UPDATE/DELETE）', default: false })
   .option('version', { type: 'boolean', describe: '打印版本信息' })
   .help(false)
   .parseSync();
@@ -48,6 +50,12 @@ function resolveValue(key: keyof OpenGaussConfig, envKey: string, defaultValue?:
 }
 
 export function getConfig(): OpenGaussConfig {
+  const enableWriteEnv = env['OPENGAUSS_ENABLE_WRITE'];
+  const enableWrite = 
+    runtimeOverrides.enableWrite ??
+    (argv['enable-write'] as boolean | undefined) ??
+    (enableWriteEnv === 'true' || enableWriteEnv === '1');
+
   return {
     host: resolveValue('host', 'OPENGAUSS_HOST', '127.0.0.1'),  // 使用 127.0.0.1 避免 IPv6 问题
     port: parseInt(resolveValue('port', 'OPENGAUSS_PORT', DEFAULT_PORT), 10),
@@ -55,6 +63,7 @@ export function getConfig(): OpenGaussConfig {
     user: resolveValue('user', 'OPENGAUSS_USER'),
     password: resolveValue('password', 'OPENGAUSS_PASSWORD'),
     schema: resolveValue('schema', 'OPENGAUSS_SCHEMA', DEFAULT_SCHEMA),
+    enableWrite,
   };
 }
 

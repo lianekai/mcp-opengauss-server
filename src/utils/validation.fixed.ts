@@ -477,3 +477,69 @@ export function getQualifiedTableName(
   return quoteIdentifier(validatedTable);
 }
 
+// ===========================
+// ✅ 新增：写入查询验证
+// ===========================
+
+/**
+ * 验证写入 SQL 查询（INSERT/UPDATE/DELETE）
+ * 仅允许单条 INSERT、UPDATE 或 DELETE 语句
+ */
+export function assertWriteQuery(query: string): void {
+  if (!query || query.trim().length === 0) {
+    throw new ValidationError('查询不能为空', 'EMPTY_QUERY');
+  }
+
+  // 长度检查
+  if (query.length > MAX_QUERY_LENGTH) {
+    throw new ValidationError(
+      `查询过长（最大 ${MAX_QUERY_LENGTH} 字符，当前 ${query.length} 字符）`,
+      'QUERY_TOO_LONG'
+    );
+  }
+
+  const trimmed = query.trim();
+  const normalized = trimmed.toUpperCase();
+
+  // 多语句检测
+  checkMultipleStatements(query);
+
+  // 只允许 INSERT、UPDATE 或 DELETE
+  const allowedPatterns = [
+    /^INSERT\s+/i,
+    /^UPDATE\s+/i,
+    /^DELETE\s+/i,
+    /^WITH\s+.*?\s+AS\s+.*?(INSERT|UPDATE|DELETE)\s/is, // CTE with write operation
+  ];
+
+  const isAllowed = allowedPatterns.some((pattern) => pattern.test(trimmed));
+
+  if (!isAllowed) {
+    throw new ValidationError(
+      '仅允许 INSERT、UPDATE 或 DELETE 语句（单语句）',
+      'INVALID_WRITE_QUERY_TYPE'
+    );
+  }
+
+  // 禁止 DDL 操作
+  const forbiddenKeywords = [
+    { pattern: /\bDROP\b/i, name: 'DROP' },
+    { pattern: /\bCREATE\b/i, name: 'CREATE' },
+    { pattern: /\bALTER\b/i, name: 'ALTER' },
+    { pattern: /\bTRUNCATE\b/i, name: 'TRUNCATE' },
+    { pattern: /\bGRANT\b/i, name: 'GRANT' },
+    { pattern: /\bREVOKE\b/i, name: 'REVOKE' },
+  ];
+
+  for (const keyword of forbiddenKeywords) {
+    if (keyword.pattern.test(query)) {
+      throw new ValidationError(
+        `写入查询不允许包含: ${keyword.name}`,
+        'FORBIDDEN_KEYWORD_IN_WRITE'
+      );
+    }
+  }
+
+  // 禁止危险函数
+  checkDangerousFunctions(query);
+}

@@ -62,10 +62,13 @@ class PromiseClient {
 }
 
 /**
- * 创建 openGauss 数据库连接
- * node-opengauss 使用 username/dbname 而不是 user/database
+ * 创建 openGauss 数据库连接（底层实现）
+ *
+ * @apiNote
+ * - node-opengauss 使用 username/dbname 而不是 user/database
+ * - 这里仅负责建立连接并设置 search_path；连接复用/重连由上层管理
  */
-export async function createConnection(): Promise<PromiseClient> {
+async function createConnectionInternal(): Promise<PromiseClient> {
   const config = getConfig();
   
   const clientConfig: ClientConfig = {
@@ -96,19 +99,169 @@ export async function createConnection(): Promise<PromiseClient> {
 }
 
 /**
- * 执行数据库操作的包装函数
- * 自动管理连接的创建和关闭
+ * 进程级连接管理
+ *
+ * @apiNote
+ * Codex 某些场景下对单次 tool call 的时间预算较紧；
+ * 如果每次调用都新建连接，会导致请求在返回前 transport 被关闭。
+ * 因此这里改为“进程级单例连接 + 简单互斥 + 失败自动重连（重试一次）”。
  */
+let sharedClient: PromiseClient | null = null;
+let connecting: Promise<PromiseClient> | null = null;
+let closeHandlersRegistered = false;
+
+// 简单互斥：避免并发 query 争用单连接导致驱动异常/结果串线。
+let mutexTail: Promise<void> = Promise.resolve();
+
+async function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = mutexTail;
+  let release!: () => void;
+  mutexTail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
+function registerCloseHandlersOnce(): void {
+  if (closeHandlersRegistered) {
+    return;
+  }
+  closeHandlersRegistered = true;
+
+  const safeClose = async (): Promise<void> => {
+    const client = sharedClient;
+    sharedClient = null;
+    connecting = null;
+    if (!client) {
+      return;
+    }
+    try {
+      await client.end();
+    } catch {
+      // 忽略关闭异常：进程退出路径不应因关闭失败而阻塞。
+    }
+  };
+
+  process.on('SIGINT', () => {
+    void safeClose();
+  });
+  process.on('SIGTERM', () => {
+    void safeClose();
+  });
+  process.on('beforeExit', () => {
+    void safeClose();
+  });
+}
+
+function isLikelyConnectionError(error: unknown): boolean {
+  if (!error) {
+    return false;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  const upper = message.toUpperCase();
+
+  return (
+    upper.includes('ECONNREFUSED') ||
+    upper.includes('ECONNRESET') ||
+    upper.includes('EPIPE') ||
+    upper.includes('BROKEN PIPE') ||
+    upper.includes('CONNECTION') ||
+    upper.includes('CONNECT') ||
+    upper.includes('SOCKET') ||
+    upper.includes('CLOSED') ||
+    upper.includes('TERMINATED')
+  );
+}
+
+async function getOrCreateSharedClient(): Promise<PromiseClient> {
+  registerCloseHandlersOnce();
+
+  if (sharedClient) {
+    return sharedClient;
+  }
+
+  if (connecting) {
+    return connecting;
+  }
+
+  connecting = (async () => {
+    const client = await createConnectionInternal();
+    sharedClient = client;
+    return client;
+  })().finally(() => {
+    connecting = null;
+  });
+
+  return connecting;
+}
+
+async function resetSharedClient(): Promise<void> {
+  const client = sharedClient;
+  sharedClient = null;
+  connecting = null;
+  if (!client) {
+    return;
+  }
+  try {
+    await client.end();
+  } catch {
+    // 忽略
+  }
+}
+
+/**
+ * 主动关闭进程级连接
+ *
+ * @apiNote
+ * stdio 传输断开时，如果仍保留数据库 socket，Node 进程可能不会自动退出，
+ * 因此需要在 server 层监听 stdin 关闭并主动释放连接。
+ */
+export async function closeDbConnection(): Promise<void> {
+  await resetSharedClient();
+}
+
+/**
+ * 启动时预热连接（可选）
+ *
+ * @apiNote
+ * 启动阶段尝试连接一次：成功则后续 tool call 基本无需再经历“建连耗时”；
+ * 失败也不阻塞服务启动，工具调用时会按需重连。
+ */
+export async function initDbConnection(): Promise<void> {
+  try {
+    await getOrCreateSharedClient();
+  } catch (error) {
+    // 不能使用 stdout（stdio MCP 协议通道），因此用 stderr 输出诊断信息。
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`[openGauss MCP] 启动预连接失败，将在工具调用时重试: ${msg}`);
+  }
+}
+
 export async function withConnection<T>(
   operation: (client: PromiseClient) => Promise<T>
 ): Promise<T> {
-  const client = await createConnection();
-  
-  try {
-    return await operation(client);
-  } finally {
-    await client.end();
-  }
+  return runExclusive(async () => {
+    const client = await getOrCreateSharedClient();
+    try {
+      return await operation(client);
+    } catch (error) {
+      // 连接异常时：重置连接并重试一次（满足“没连上就重新建一次”的诉求）。
+      if (!isLikelyConnectionError(error)) {
+        throw error;
+      }
+
+      await resetSharedClient();
+      const retryClient = await getOrCreateSharedClient();
+      return await operation(retryClient);
+    }
+  });
 }
 
 /**
@@ -123,7 +276,5 @@ export async function ensureSchema(client: PromiseClient, schema: string): Promi
     );
   }
 }
-
-
 
 
