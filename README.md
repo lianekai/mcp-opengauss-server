@@ -5,7 +5,9 @@
 ## 功能特性
 
 - ✅ **安全的只读查询**：仅允许 SELECT、SHOW、DESCRIBE、EXPLAIN 等只读操作
+- ✅ **查询优化分析**：支持 EXPLAIN（执行计划）与 EXPLAIN ANALYZE（真实耗时）
 - ✅ **完整的表管理**：列出表、查询表结构、执行自定义查询
+- ✅ **可选写入能力（默认禁用）**：可通过配置开启 INSERT/UPDATE，并要求每次写入二次确认
 - ✅ **openGauss 原生支持**：基于 `node-opengauss` 驱动，完全兼容 openGauss 特性
 - ✅ **PostgreSQL 兼容**：利用 openGauss 对 PostgreSQL 的兼容性
 - ✅ **类型安全**：使用 TypeScript 和 Zod 进行参数验证
@@ -30,6 +32,9 @@ OPENGAUSS_DATABASE=postgres
 OPENGAUSS_USER=your_username
 OPENGAUSS_PASSWORD=your_password
 OPENGAUSS_SCHEMA=public
+
+# 高风险：是否启用写入能力（默认 false）
+OPENGAUSS_ENABLE_WRITE=false
 ```
 
 ### 3. 构建项目
@@ -56,6 +61,136 @@ npm start
 
 在你的 MCP 客户端配置文件中添加：
 
+#### 方式 1：使用 `npx` 启动（推荐：统一适配 Claude Desktop / Cursor / Codex）
+
+> 前提：已全局安装 `mcp-opengauss-server`（`npm install -g mcp-opengauss-server`）。
+> - macOS/Linux：`command` 使用 `npx`
+> - Windows：`command` 建议使用 `npx.cmd`
+> - 如遇到 “npx 找不到包”，可先去掉 `--no-install`（允许 npx 自动下载），或改回直接使用 `mcp-opengauss` 命令。
+
+**常见配置文件位置：**
+- Cursor：`~/.cursor/mcp.json`（Windows：`%USERPROFILE%\\.cursor\\mcp.json`）
+- Claude Desktop：`~/Library/Application Support/Claude/claude_desktop_config.json`（Windows：`%APPDATA%\\Claude\\claude_desktop_config.json`）
+- Codex：在 Codex 的 `mcpServers` 配置中加入同样片段即可（不同安装形态路径可能不同）
+
+**macOS / Linux**
+
+```json
+{
+  "mcpServers": {
+    "opengauss": {
+      "command": "npx",
+      "args": [
+        "--no-install",
+        "mcp-opengauss-server",
+        "--host",
+        "localhost",
+        "--port",
+        "5432",
+        "--user",
+        "your_username",
+        "--password",
+        "your_password",
+        "--database",
+        "postgres",
+        "--schema",
+        "public"
+      ]
+    }
+  }
+}
+```
+
+**启用写入功能（可选，高风险）**
+
+如需启用数据写入功能（INSERT/UPDATE），在 `args` 中添加 `--enable-write` 参数：
+
+```json
+{
+  "mcpServers": {
+    "opengauss": {
+      "command": "npx",
+      "args": [
+        "--no-install",
+        "mcp-opengauss-server",
+        "--host",
+        "localhost",
+        "--port",
+        "5432",
+        "--user",
+        "your_username",
+        "--password",
+        "your_password",
+        "--database",
+        "postgres",
+        "--schema",
+        "public",
+        "--enable-write"
+      ]
+    }
+  }
+}
+```
+
+**Windows**
+
+```json
+{
+  "mcpServers": {
+    "opengauss": {
+      "command": "npx.cmd",
+      "args": [
+        "--no-install",
+        "mcp-opengauss-server",
+        "--host",
+        "localhost",
+        "--port",
+        "5432",
+        "--user",
+        "your_username",
+        "--password",
+        "your_password",
+        "--database",
+        "postgres",
+        "--schema",
+        "public"
+      ]
+    }
+  }
+}
+```
+
+**Windows 启用写入功能**
+
+```json
+{
+  "mcpServers": {
+    "opengauss": {
+      "command": "npx.cmd",
+      "args": [
+        "--no-install",
+        "mcp-opengauss-server",
+        "--host",
+        "localhost",
+        "--port",
+        "5432",
+        "--user",
+        "your_username",
+        "--password",
+        "your_password",
+        "--database",
+        "postgres",
+        "--schema",
+        "public",
+        "--enable-write"
+      ]
+    }
+  }
+}
+```
+
+#### 方式 2：使用本地构建文件（无需 npx）
+
 ```json
 {
   "mcpServers": {
@@ -68,7 +203,32 @@ npm start
         "OPENGAUSS_DATABASE": "postgres",
         "OPENGAUSS_USER": "your_username",
         "OPENGAUSS_PASSWORD": "your_password",
-        "OPENGAUSS_SCHEMA": "public"
+        "OPENGAUSS_SCHEMA": "public",
+        "OPENGAUSS_ENABLE_WRITE": "false"
+      }
+    }
+  }
+}
+```
+
+**启用写入功能（方式 2）**
+
+将 `OPENGAUSS_ENABLE_WRITE` 设置为 `"true"`：
+
+```json
+{
+  "mcpServers": {
+    "opengauss": {
+      "command": "node",
+      "args": ["/path/to/mcp-opengauss-server/dist/index.js"],
+      "env": {
+        "OPENGAUSS_HOST": "localhost",
+        "OPENGAUSS_PORT": "5432",
+        "OPENGAUSS_DATABASE": "postgres",
+        "OPENGAUSS_USER": "your_username",
+        "OPENGAUSS_PASSWORD": "your_password",
+        "OPENGAUSS_SCHEMA": "public",
+        "OPENGAUSS_ENABLE_WRITE": "true"
       }
     }
   }
@@ -123,6 +283,62 @@ npm start
 }
 ```
 
+### 4. explain_query
+
+生成执行计划（EXPLAIN），默认 `FORMAT JSON`。
+
+**参数：**
+- `query` (必需): 只读 SQL
+- `schema` (可选): Schema 名称
+- `options` (可选): EXPLAIN 选项（`analyze`/`buffers`/`verbose`/`format`）
+
+**示例：**
+```json
+{
+  "query": "SELECT * FROM users WHERE id = 1",
+  "options": { "format": "json" }
+}
+```
+
+### 5. profile_query
+
+执行 `EXPLAIN (ANALYZE ...)` 并提取 planning/execution time 等指标（会实际执行查询）。
+
+**参数：**
+- `query` (必需): 只读 SQL
+- `schema` (可选): Schema 名称
+- `options` (可选): EXPLAIN 选项（`buffers`/`verbose`/`format`，ANALYZE 强制开启）
+
+**示例：**
+```json
+{
+  "query": "SELECT * FROM users WHERE id < 1000",
+  "options": { "buffers": true }
+}
+```
+
+### 6. execute_write（默认禁用）
+
+执行写入 SQL（仅允许 INSERT/UPDATE 单语句）。默认禁用，需显式开启并在每次调用中确认。
+
+**前置条件：**
+- 配置 `OPENGAUSS_ENABLE_WRITE=true`（高风险）
+
+**参数：**
+- `query` (必需): 写入 SQL（仅 INSERT/UPDATE）
+- `params` (可选): 参数数组（对应 `$1, $2, ...`）
+- `schema` (可选): Schema 名称
+- `confirm` (必需): 必须等于 `"确认"`
+
+**示例：**
+```json
+{
+  "query": "UPDATE users SET name = $1 WHERE id = $2",
+  "params": ["alice", 1],
+  "confirm": "确认"
+}
+```
+
 ## 安全特性
 
 ### SQL 注入防护
@@ -136,6 +352,12 @@ npm start
 - ✅ 拒绝 INSERT、UPDATE、DELETE、DROP 等写操作
 - ✅ 拒绝 CREATE、ALTER、TRUNCATE 等 DDL 操作
 - ✅ 拒绝 GRANT、REVOKE 等权限操作
+
+### 写入保护（可选启用）
+
+- ✅ 默认禁用写入能力（需 `OPENGAUSS_ENABLE_WRITE=true`）
+- ✅ 每次写入需要 `confirm="确认"` 二次确认
+- ✅ 写入白名单：仅允许 INSERT/UPDATE（单语句）
 
 ## 技术栈
 
@@ -254,7 +476,4 @@ MIT
 - openGauss 社区
 - node-opengauss 项目
 - Model Context Protocol (MCP) 项目
-
-
-
 
